@@ -4,11 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const pool = new Pool({
-    user: "postgres",               // ton rôle PostgreSQL
-    password: "123456",             // mot de passe
-    host: "localhost",
-    port: 5432,
-    database: "lmsconnector"
+    connectionString: process.env.DATABASE_URL,
 });
 
-export default pool;
+export default pool;

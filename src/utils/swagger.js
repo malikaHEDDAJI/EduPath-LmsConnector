@@ -1,336 +1,169 @@
-import swaggerUi from "swagger-ui-express";
+import express from "express";
+import multer from "multer";
+import checkOAuth from "./middleware/auth.js";
+import { setupSwagger } from "./utils/swagger.js";
+import pool from "./utils/db.js";
 
-export const setupSwagger = (app) => {
-    const swaggerDocument = {
-        openapi: "3.0.0",
-        info: {
-            title: "LMSConnector API",
-            version: "1.0.0",
-            description: "Microservice d'importation CSV et extraction JSON pour LMS",
-        },
-        servers: [
-            { url: "http://localhost:3001", description: "Local server" }
-        ],
-        paths: {
-            // ---------------------------------------------------
-            // POST — IMPORT CSV
-            // ---------------------------------------------------
-            "/student-info": {
-                post: {
-                    tags: ["CSV Import"],
-                    summary: "Importer étudiant (StudentInfo) via CSV",
-                    requestBody: {
-                        required: true,
-                        content: {
-                            "multipart/form-data": {
-                                schema: {
-                                    type: "object",
-                                    properties: { file: { type: "string", format: "binary" } }
-                                }
-                            }
-                        }
-                    },
-                    responses: { 200: { description: "Import StudentInfo OK" } }
-                }
-            },
+import {
+    importStudentInfo,
+    importStudentVle,
+    importStudentAssessment,
+    importCourses,
+    importRegistrations,
+    importVleInfo,
+    importAssessments
+} from "./services/import.service.js";
 
-            "/student-vle": {
-                post: {
-                    tags: ["CSV Import"],
-                    summary: "Importer Student VLE (activités) via CSV",
-                    requestBody: {
-                        required: true,
-                        content: {
-                            "multipart/form-data": {
-                                schema: {
-                                    type: "object",
-                                    properties: { file: { type: "string", format: "binary" } }
-                                }
-                            }
-                        }
-                    },
-                    responses: { 200: { description: "Import StudentVLE OK" } }
-                }
-            },
+const app = express();
+const upload = multer({ dest: "uploads/" });
 
-            "/student-assessment": {
-                post: {
-                    tags: ["CSV Import"],
-                    summary: "Importer StudentAssessment via CSV",
-                    requestBody: {
-                        required: true,
-                        content: {
-                            "multipart/form-data": {
-                                schema: {
-                                    type: "object",
-                                    properties: { file: { type: "string", format: "binary" } }
-                                }
-                            }
-                        }
-                    },
-                    responses: { 200: { description: "Import StudentAssessment OK" } }
-                }
-            },
+// Middleware JSON
+app.use(express.json());
 
-            "/courses": {
-                post: {
-                    tags: ["CSV Import"],
-                    summary: "Importer les cours via CSV",
-                    requestBody: {
-                        required: true,
-                        content: {
-                            "multipart/form-data": {
-                                schema: {
-                                    type: "object",
-                                    properties: { file: { type: "string", format: "binary" } }
-                                }
-                            }
-                        }
-                    },
-                    responses: { 200: { description: "Courses imported" } }
-                },
-                get: {
-                    tags: ["GET Data"],
-                    summary: "Récupérer la liste des cours",
-                    responses: {
-                        200: {
-                            description: "Liste des cours",
-                            content: {
-                                "application/json": {
-                                    schema: { type: "array", items: { $ref: "#/components/schemas/Course" } }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
+// Swagger
+setupSwagger(app);
 
-            "/registrations": {
-                post: {
-                    tags: ["CSV Import"],
-                    summary: "Importer les inscriptions (Registrations)",
-                    requestBody: {
-                        required: true,
-                        content: {
-                            "multipart/form-data": {
-                                schema: { type: "object", properties: { file: { type: "string", format: "binary" } } }
-                            }
-                        }
-                    },
-                    responses: { 200: { description: "Registrations imported" } }
-                },
-                get: {
-                    tags: ["GET Data"],
-                    summary: "Récupérer les inscriptions",
-                    responses: {
-                        200: {
-                            description: "Liste des inscriptions",
-                            content: {
-                                "application/json": {
-                                    schema: {
-                                        type: "array",
-                                        items: { $ref: "#/components/schemas/Registration" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-
-            "/vle-info": {
-                post: {
-                    tags: ["CSV Import"],
-                    summary: "Importer VLE Info via CSV",
-                    requestBody: {
-                        required: true,
-                        content: {
-                            "multipart/form-data": {
-                                schema: { type: "object", properties: { file: { type: "string", format: "binary" } } }
-                            }
-                        }
-                    },
-                    responses: { 200: { description: "VLE Info imported" } }
-                },
-                get: {
-                    tags: ["GET Data"],
-                    summary: "Récupérer la table VLE Info",
-                    responses: {
-                        200: {
-                            description: "Liste VLE Info",
-                            content: {
-                                "application/json": {
-                                    schema: {
-                                        type: "array",
-                                        items: { $ref: "#/components/schemas/VleInfo" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-
-            "/assessments": {
-                post: {
-                    tags: ["CSV Import"],
-                    summary: "Importer Assessments via CSV",
-                    requestBody: {
-                        required: true,
-                        content: {
-                            "multipart/form-data": {
-                                schema: { type: "object", properties: { file: { type: "string", format: "binary" } } }
-                            }
-                        }
-                    },
-                    responses: { 200: { description: "Assessments imported" } }
-                },
-                get: {
-                    tags: ["GET Data"],
-                    summary: "Récupérer toutes les évaluations",
-                    responses: {
-                        200: {
-                            description: "Liste des assessments",
-                            content: {
-                                "application/json": {
-                                    schema: { type: "array", items: { $ref: "#/components/schemas/Assessment" } }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-
-            "/students": {
-                get: {
-                    tags: ["GET Data"],
-                    summary: "Récupérer la liste des étudiants",
-                    responses: {
-                        200: {
-                            description: "Liste des étudiants",
-                            content: {
-                                "application/json": {
-                                    schema: { type: "array", items: { $ref: "#/components/schemas/Student" } }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-
-            "/learning-logs": {
-                get: {
-                    tags: ["GET Data"],
-                    summary: "Récupérer tous les logs VLE",
-                    responses: {
-                        200: {
-                            description: "Learning logs list",
-                            content: {
-                                "application/json": {
-                                    schema: { type: "array", items: { $ref: "#/components/schemas/LearningLog" } }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-
-            "/student-assessment": {
-                get: {
-                    tags: ["GET Data"],
-                    summary: "Récupérer StudentAssessment (table complète)",
-                    responses: {
-                        200: {
-                            description: "StudentAssessment table",
-                            content: {
-                                "application/json": {
-                                    schema: {
-                                        type: "array",
-                                        items: { $ref: "#/components/schemas/StudentAssessment" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-
-        // ---------------------------------------------------
-        // SCHEMAS
-        // ---------------------------------------------------
-        components: {
-            schemas: {
-                Student: {
-                    type: "object",
-                    properties: {
-                        id_student: { type: "integer" },
-                        name: { type: "string" },
-                        gender: { type: "string" },
-                        region: { type: "string" }
-                    }
-                },
-
-                Course: {
-                    type: "object",
-                    properties: {
-                        code_module: { type: "string" },
-                        code_presentation: { type: "string" },
-                        module_title: { type: "string" }
-                    }
-                },
-
-                Registration: {
-                    type: "object",
-                    properties: {
-                        id_student: { type: "integer" },
-                        code_module: { type: "string" },
-                        code_presentation: { type: "string" },
-                        date_registration: { type: "integer" }
-                    }
-                },
-
-                VleInfo: {
-                    type: "object",
-                    properties: {
-                        id_site: { type: "integer" },
-                        activity_type: { type: "string" },
-                        week_from: { type: "integer" },
-                        week_to: { type: "integer" }
-                    }
-                },
-
-                LearningLog: {
-                    type: "object",
-                    properties: {
-                        id_student: { type: "integer" },
-                        id_site: { type: "integer" },
-                        sum_click: { type: "integer" }
-                    }
-                },
-
-                Assessment: {
-                    type: "object",
-                    properties: {
-                        id_assessment: { type: "integer" },
-                        code_module: { type: "string" },
-                        code_presentation: { type: "string" },
-                        date: { type: "integer" },
-                        weight: { type: "integer" }
-                    }
-                },
-
-                StudentAssessment: {
-                    type: "object",
-                    properties: {
-                        id_student: { type: "integer" },
-                        id_assessment: { type: "integer" },
-                        score: { type: "integer" }
-                    }
-                }
-            }
+// ---------------------------------------------
+// Helper pour gérer les imports CSV
+// ---------------------------------------------
+async function handleImport(req, res, importFunction, message) {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: "Aucun fichier envoyé" });
         }
-    };
+        await importFunction(req.file.path);
+        res.status(200).json({ message });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+}
 
-    app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-};
+// ---------------------------------------------
+// POST — IMPORT CSV
+// ---------------------------------------------
+app.post("/student-info", checkOAuth, upload.single("file"), (req, res) =>
+    handleImport(req, res, importStudentInfo, "StudentInfo importé")
+);
+
+app.post("/student-vle", checkOAuth, upload.single("file"), (req, res) =>
+    handleImport(req, res, importStudentVle, "StudentVLE importé avec succès")
+);
+
+app.post("/student-assessment", checkOAuth, upload.single("file"), (req, res) =>
+    handleImport(req, res, importStudentAssessment, "StudentAssessment importé")
+);
+
+app.post("/courses", checkOAuth, upload.single("file"), (req, res) =>
+    handleImport(req, res, importCourses, "Courses importés")
+);
+
+app.post("/registrations", checkOAuth, upload.single("file"), (req, res) =>
+    handleImport(req, res, importRegistrations, "Registrations importées")
+);
+
+app.post("/vle-info", checkOAuth, upload.single("file"), (req, res) =>
+    handleImport(req, res, importVleInfo, "VLE Info importé")
+);
+
+app.post("/assessments", checkOAuth, upload.single("file"), (req, res) =>
+    handleImport(req, res, importAssessments, "Assessments importés")
+);
+
+// ------------------------------------------------------
+// GET — TABLES SIMPLES
+// ------------------------------------------------------
+app.get("/students", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM students");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get("/courses", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM courses");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get("/registrations", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM registrations");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get("/vle-info", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM vle_info");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get("/assessments", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM assessments");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get("/student-assessment", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM studentassessment");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ------------------------------------------------------
+// GET — PAGINATION MASSIVE (7 MILLIONS DE LIGNES)
+// ------------------------------------------------------
+app.get("/student-vle", async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const size = parseInt(req.query.size) || 1000;
+
+        // max 20k par page pour éviter explosion mémoire
+        const limit = Math.min(size, 20000);
+        const offset = (page - 1) * limit;
+
+        const result = await pool.query(
+            `SELECT * FROM studentvle 
+             ORDER BY id_student 
+             LIMIT $1 OFFSET $2`,
+            [limit, offset]
+        );
+
+        // total count (optimisé via cache possible plus tard)
+        const totalResult = await pool.query("SELECT COUNT(*) FROM studentvle");
+        const total = parseInt(totalResult.rows[0].count);
+        const totalPages = Math.ceil(total / limit);
+
+        res.json({
+            page,
+            size: limit,
+            total,
+            totalPages,
+            rows: result.rowCount,
+            data: result.rows
+        });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Serveur
+app.listen(3001, () => console.log("LMSConnector running on port 3001"));

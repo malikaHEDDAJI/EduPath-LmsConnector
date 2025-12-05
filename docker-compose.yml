@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: lms_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: postgres
+    ports:
+      - "55432:5432"   # Changed host port to avoid conflicts
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d   # SQL scripts to create tables
+      - lms_data:/var/lib/postgresql/data      # Persisted data
+    networks:
+      - lmsnet
+
+  lmsconnector:
+    build: .
+    container_name: lms_connector
+    restart: always
+    ports:
+      - "33001:3001"   # Changed host port for Node.js API
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      - postgres
+    networks:
+      - lmsnet
+
+volumes:
+  lms_data:
+
+networks:
+  lmsnet:

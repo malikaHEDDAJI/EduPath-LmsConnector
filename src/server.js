@@ -109,12 +109,32 @@ app.get("/vle-info", async (req, res) => {
 
 app.get("/student-vle", async (req, res) => {
     try {
-        const result = await pool.query("SELECT * FROM studentvle");
-        res.json(result.rows);
+        // Pagination : page=1&size=1000
+        const page = parseInt(req.query.page) || 1;
+        const size = parseInt(req.query.size) || 1000;
+
+        // Sécurité : limite max
+        const limit = Math.min(size, 20000); // max 20k lignes par requête
+        const offset = (page - 1) * limit;
+
+        // Récupération paginée
+        const result = await pool.query(
+            "SELECT * FROM studentvle ORDER BY id_student LIMIT $1 OFFSET $2",
+            [limit, offset]
+        );
+
+        res.json({
+            page,
+            size: limit,
+            rows: result.rowCount,
+            data: result.rows
+        });
+
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
+
 
 app.get("/assessments", async (req, res) => {
     try {
