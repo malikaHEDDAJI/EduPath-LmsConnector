@@ -213,173 +213,6 @@ export async function importVleInfo(path) {
     );
 }
 
-
-// ---------------------------
-// Import Student VLE (batch insert)
-// ---------------------------
-
-/**
- * Normalise la date au format YYYY-MM-DD
- */
-function normalizeActivityDate(val) {
-    if (!val) return null;
-
-    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-
-    const n = parseInt(val, 10);
-    if (!isNaN(n) && n >= 0 && n < 36525) {
-        const baseDate = new Date(Date.UTC(1970, 0, 1));
-        baseDate.setUTCDate(baseDate.getUTCDate() + n);
-        const yyyy = baseDate.getUTCFullYear();
-        const mm = String(baseDate.getUTCMonth() + 1).padStart(2, "0");
-        const dd = String(baseDate.getUTCDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-    }
-
-    return null;
-}
-
-/**
- * Prétraite le CSV avec readline + writeStream
- */
-async function preprocessCSV(inputPath, outputPath) {
-    const rl = readline.createInterface({
-        input: fs.createReadStream(inputPath),
-        crlfDelay: Infinity
-    });
-
-    const outStream = fs.createWriteStream(outputPath);
-
-    let isHeader = true;
-    for await (const line of rl) {
-        if (isHeader) {
-            outStream.write("student_id,module,presentation,activity_date,activity_type,clicks\n");
-            isHeader = false;
-            continue;
-        }
-
-        if (!line.trim()) continue;
-
-        const parts = line.split(",");
-        const student_id = parts[2] || null;       // id_student
-        const module = parts[0] || null;           // code_module
-        const presentation = parts[1] || null;     // code_presentation
-        const activity_date = normalizeActivityDate(parts[4]);
-        const activity_type = parts[3] || null;    // id_site
-        const clicks = parts[5] ? parseInt(parts[5], 10) : 0;
-
-        if (!student_id || !activity_date) continue;
-
-        outStream.write([student_id, module, presentation, activity_date, activity_type, clicks].join(",") + "\n");
-    }
-
-    outStream.end();
-    return new Promise(resolve => outStream.on("finish", resolve));
-}
-
-/**
- * Import Student VLE
- */
-export async function importStudentVle(path) {
-    const client = await pool.connect();
-    try {
-        console.log("Rôle connecté:", (await client.query("SELECT current_user")).rows[0].current_user);
-
-        const tmpPath = path + ".tmp.csv";
-        await preprocessCSV(path, tmpPath);
-
-        const stream = client.query(copyFrom(`
-            COPY learning_logs(student_id, module, presentation, activity_date, activity_type, clicks)
-            FROM STDIN WITH CSV HEADER
-        `));
-
-        const fileStream = fs.createReadStream(tmpPath);
-        await new Promise((resolve, reject) => {
-            fileStream.pipe(stream)
-                .on("finish", resolve)
-                .on("error", reject);
-        });
-
-        console.log("StudentVLE imported");
-        fs.unlinkSync(tmpPath);
-    } finally {
-        client.release();
-    }
-}
-
-
-// ---------------------------
-// Import Student Assessment (streaming COPY)
-// ---------------------------
-
-// ---------------------------
-// Parse activity_date
-// ---------------------------
-function parseActivityDate(val) {
-    if (!val) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-
-    const n = parseInt(val);
-    if (isNaN(n)) return "";
-
-    const date = new Date(1970, 0, 1);
-    date.setDate(date.getDate() + n);
-    return date.toISOString().split("T")[0];
-}
-
-// ---------------------------
-// Import Student Assessment (streaming COPY)
-// ---------------------------
-export async function importStudentAssessment(path) {
-    const client = await pool.connect();
-
-    try {
-        console.log("Rôle connecté:", (await client.query("SELECT current_user")).rows[0].current_user);
-
-        const stream = client.query(copyFrom(`
-            COPY studentassessment(student_id, activity_date, activity_type, score, assessment_type)
-            FROM STDIN WITH CSV HEADER
-        `));
-
-        const readStream = fs.createReadStream(path);
-
-        // Transform pour nettoyer et normaliser les données
-        const transformStream = new Transform({
-            writableObjectMode: true,
-            readableObjectMode: false,
-            transform(row, encoding, callback) {
-                const student_id = row.student_id;
-                if (!student_id) return callback(); // ignore ligne si student_id manquant
-
-                const activity_date = parseActivityDate(row.activity_date);
-                const activity_type = row.activity_type || "unknown";
-                const score = row.score || "";
-                const assessment_type = row.assessment_type || "";
-
-                const line = [student_id, activity_date, activity_type, score, assessment_type].join(",") + "\n";
-                this.push(line);
-                callback();
-            }
-        });
-
-        // Pipeline CSV -> transform -> COPY
-        readStream
-            .pipe(csvParser())   // Parse CSV en objets
-            .pipe(transformStream) // Nettoyer / normaliser
-            .pipe(stream)          // Envoi vers PostgreSQL
-            .on("finish", () => console.log("Student Assessment importé avec COPY !"))
-            .on("error", (err) => console.error("Erreur COPY :", err));
-
-        await new Promise((resolve, reject) => {
-            stream.on("finish", resolve);
-            stream.on("error", reject);
-        });
-
-    } finally {
-        client.release();
-    }
-}
-
 // ---------------------------
 // Import Assessments (batch insert)
 // ---------------------------
@@ -428,4 +261,143 @@ export async function importAssessments(path) {
             })
             .on("error", reject);
     });
+}
+
+// ---------------------------
+// IMPORT STUDENT VLE
+// ---------------------------
+
+
+// Fonctions utilitaires pour nettoyer les données
+function safeInt(value) {
+    const n = parseInt(value);
+    return isNaN(n) ? null : n;
+}
+
+function safeDate(value) {
+    if (!value) return null;
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0];
+}
+
+function safeString(value) {
+    if (!value) return null;
+    const str = String(value).trim();
+    return str.length === 0 ? null : str;
+}
+
+// Import StudentVLE avec filtration des doublons
+export async function importStudentVle(path) {
+    const client = await pool.connect();
+    try {
+        console.log("Rôle connecté:", (await client.query("SELECT current_user")).rows[0].current_user);
+
+        const seen = new Set();
+
+        const stream = client.query(copyFrom(`
+            COPY studentvle(code_module, code_presentation, id_student, id_site, activity_date, sum_click)
+            FROM STDIN WITH CSV HEADER
+        `));
+
+        const transformStream = new Transform({
+            writableObjectMode: true,
+            readableObjectMode: false,
+            transform(row, encoding, callback) {
+                const code_module = safeString(row.code_module);
+                const code_presentation = safeString(row.code_presentation);
+                const id_student = safeInt(row.id_student);
+                const id_site = safeInt(row.id_site);
+                const activity_date = safeDate(row.date || row.activity_date);
+                const sum_click = safeInt(row.sum_click || 0);
+
+                // Vérifier données essentielles
+                if (!code_module || !code_presentation || !id_student || !id_site || !activity_date) {
+                    return callback(); // ignore lignes incomplètes
+                }
+
+                // Générer une clé unique pour filtrer les doublons
+                const key = `${code_module}|${code_presentation}|${id_student}|${id_site}|${activity_date}`;
+                if (seen.has(key)) return callback(); // doublon → ignore
+                seen.add(key);
+
+                const line = [code_module, code_presentation, id_student, id_site, activity_date, sum_click].join(",") + "\n";
+                this.push(line);
+                callback();
+            }
+        });
+
+        await new Promise((resolve, reject) => {
+            fs.createReadStream(path)
+                .pipe(csvParser())
+                .pipe(transformStream)
+                .pipe(stream)
+                .on("finish", resolve)
+                .on("error", reject);
+        });
+
+        console.log("StudentVLE importé avec succès !");
+    } finally {
+        client.release();
+    }
+}
+
+// ---------------------------
+// IMPORT STUDENT ASSESSMENT
+// ---------------------------
+
+/**
+ * Convertit un entier → date (YYYY-MM-DD)
+ */
+function convertAssessmentDate(n) {
+    const val = parseInt(n, 10);
+    if (isNaN(val)) return "";
+
+    const d = new Date(1970, 0, 1);
+    d.setDate(d.getDate() + val);
+    return d.toISOString().split("T")[0];
+}
+
+export async function importStudentAssessment(path) {
+    const client = await pool.connect();
+    try {
+        const copyStream = client.query(copyFrom(`
+            COPY studentassessment(student_id, activity_date, activity_type, score, assessment_type)
+            FROM STDIN WITH CSV HEADER
+        `));
+
+        const transform = new Transform({
+            writableObjectMode: true,
+            readableObjectMode: false,
+            transform(row, enc, cb) {
+                if (!row.id_student) return cb();
+
+                const activity_date = convertAssessmentDate(row.date_submitted);
+
+                const line = [
+                    row.id_student,
+                    activity_date,
+                    row.id_assessment,   // stocké comme activity_type
+                    row.score,
+                    row.is_banked        // ou "0"/"1"
+                ].join(",") + "\n";
+
+                this.push(line);
+                cb();
+            }
+        });
+
+        fs.createReadStream(path)
+            .pipe(csvParser())
+            .pipe(transform)
+            .pipe(copyStream);
+
+        await new Promise((resolve, reject) => {
+            copyStream.on("finish", resolve);
+            copyStream.on("error", reject);
+        });
+
+        console.log("StudentAssessment importé !");
+    } finally {
+        client.release();
+    }
 }

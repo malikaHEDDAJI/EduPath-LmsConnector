@@ -28,11 +28,12 @@ setupSwagger(app);
 // ---------------------------------------------
 async function handleImport(req, res, importFunction, message) {
     try {
+        if (!req.file) return res.status(400).json({ error: "Aucun fichier envoyé" });
         await importFunction(req.file.path);
         res.status(200).json({ message });
     } catch (err) {
         console.error(err);
-        res.status(400).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 }
 
@@ -40,38 +41,36 @@ async function handleImport(req, res, importFunction, message) {
 // POST — IMPORT CSV vers PostgreSQL
 // ---------------------------------------------
 app.post("/student-info", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importStudentInfo, "StudentInfo imported")
+    handleImport(req, res, importStudentInfo, "StudentInfo importé")
 );
 
 app.post("/student-vle", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importStudentVle, "StudentVLE imported")
+    handleImport(req, res, importStudentVle, "StudentVLE importé avec succès")
 );
 
 app.post("/student-assessment", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importStudentAssessment, "StudentAssessment imported")
+    handleImport(req, res, importStudentAssessment, "StudentAssessment importé")
 );
 
 app.post("/courses", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importCourses, "Courses imported")
+    handleImport(req, res, importCourses, "Courses importés")
 );
 
 app.post("/registrations", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importRegistrations, "Registrations imported")
+    handleImport(req, res, importRegistrations, "Registrations importées")
 );
 
 app.post("/vle-info", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importVleInfo, "VLE Info imported")
+    handleImport(req, res, importVleInfo, "VLE Info importé")
 );
 
 app.post("/assessments", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importAssessments, "Assessments imported")
+    handleImport(req, res, importAssessments, "Assessments importés")
 );
 
 // ------------------------------------------------------
 // GET — Microservice suivant récupère les données JSON
 // ------------------------------------------------------
-
-// GET all students
 app.get("/students", async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM students");
@@ -81,7 +80,6 @@ app.get("/students", async (req, res) => {
     }
 });
 
-// GET all courses
 app.get("/courses", async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM courses");
@@ -91,7 +89,6 @@ app.get("/courses", async (req, res) => {
     }
 });
 
-// GET all registrations
 app.get("/registrations", async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM registrations");
@@ -101,7 +98,6 @@ app.get("/registrations", async (req, res) => {
     }
 });
 
-// GET all VLE info
 app.get("/vle-info", async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM vle_info");
@@ -111,17 +107,15 @@ app.get("/vle-info", async (req, res) => {
     }
 });
 
-// GET all learning logs
-app.get("/learning-logs", async (req, res) => {
+app.get("/student-vle", async (req, res) => {
     try {
-        const result = await pool.query("SELECT * FROM learning_logs");
+        const result = await pool.query("SELECT * FROM studentvle");
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// GET all assessments
 app.get("/assessments", async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM assessments");
@@ -131,7 +125,6 @@ app.get("/assessments", async (req, res) => {
     }
 });
 
-// GET all student assessment logs
 app.get("/student-assessment", async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM studentassessment");
