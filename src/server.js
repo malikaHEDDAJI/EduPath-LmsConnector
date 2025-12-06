@@ -3,6 +3,8 @@ import multer from "multer";
 import checkOAuth from "./middleware/auth.js";
 import { setupSwagger } from "./utils/swagger.js";
 import pool from "./utils/db.js";
+import cors from "cors";
+
 
 import {
     importStudentInfo,
@@ -15,6 +17,7 @@ import {
 } from "./services/import.service.js";
 
 const app = express();
+app.use(cors());
 const upload = multer({ dest: "uploads/" });
 
 // Middleware JSON

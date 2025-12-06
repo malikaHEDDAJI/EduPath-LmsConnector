@@ -1,169 +1,265 @@
-import express from "express";
-import multer from "multer";
-import checkOAuth from "./middleware/auth.js";
-import { setupSwagger } from "./utils/swagger.js";
-import pool from "./utils/db.js";
+import swaggerJsdoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
 
-import {
-    importStudentInfo,
-    importStudentVle,
-    importStudentAssessment,
-    importCourses,
-    importRegistrations,
-    importVleInfo,
-    importAssessments
-} from "./services/import.service.js";
-
-const app = express();
-const upload = multer({ dest: "uploads/" });
-
-// Middleware JSON
-app.use(express.json());
-
-// Swagger
-setupSwagger(app);
-
-// ---------------------------------------------
-// Helper pour gérer les imports CSV
-// ---------------------------------------------
-async function handleImport(req, res, importFunction, message) {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: "Aucun fichier envoyé" });
+const options = {
+    definition: {
+        openapi: "3.0.0",
+        info: {
+            title: "LMSConnector API",
+            version: "1.0.0",
+            description: "Microservice pour importer les CSV OULAD et préparer les données d'apprentissage"
+        },
+        servers: [
+            { url: "http://localhost:3001" }
+        ],
+        components: {
+            schemas: {
+                FileUpload: {
+                    type: "object",
+                    properties: {
+                        file: { type: "string", format: "binary", description: "Fichier CSV à importer" }
+                    },
+                    required: ["file"]
+                },
+                ResponseMessage: {
+                    type: "object",
+                    properties: {
+                        success: { type: "boolean" },
+                        message: { type: "string" }
+                    }
+                },
+                LearningLog: {
+                    type: "object",
+                    properties: {
+                        student_id: { type: "string" },
+                        module: { type: "string" },
+                        presentation: { type: "string" },
+                        activity_date: { type: "string", format: "date" },
+                        activity_type: { type: "string" },
+                        clicks: { type: "integer" },
+                        score: { type: "number" },
+                        assessment_type: { type: "string" }
+                    }
+                },
+                Registration: {
+                    type: "object",
+                    properties: {
+                        student_id: { type: "string" },
+                        code_module: { type: "string" },
+                        code_presentation: { type: "string" },
+                        date_registration: { type: "string", format: "date" },
+                        date_unregistration: { type: "string", format: "date" }
+                    }
+                },
+                Course: {
+                    type: "object",
+                    properties: {
+                        code_module: { type: "string" },
+                        code_presentation: { type: "string" },
+                        module_presentation_length: { type: "integer" }
+                    }
+                },
+                VLEInfo: {
+                    type: "object",
+                    properties: {
+                        id_site: { type: "string" },
+                        code_module: { type: "string" },
+                        code_presentation: { type: "string" },
+                        activity_type: { type: "string" },
+                        week_from: { type: "integer" },
+                        week_to: { type: "integer" }
+                    }
+                },
+                Assessment: {
+                    type: "object",
+                    properties: {
+                        code_module: { type: "string" },
+                        code_presentation: { type: "string" },
+                        id_assessment: { type: "string" },
+                        assessment_type: { type: "string" },
+                        assessment_date: { type: "string", format: "date" },
+                        weight: { type: "number" }
+                    }
+                }
+            }
+        },
+        paths: {
+            // ---------------- Import CSV ----------------
+            "/student-info": {
+                post: {
+                    summary: "Importer le CSV des informations des étudiants",
+                    tags: ["Import"],
+                    description: "Requiert OAuth. CSV importé via handleImport. Message : StudentInfo importé",
+                    requestBody: {
+                        required: true,
+                        content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/FileUpload" } } }
+                    },
+                    responses: {
+                        200: { description: "Import réussi", content: { "application/json": { schema: { $ref: "#/components/schemas/ResponseMessage" } } } }
+                    }
+                }
+            },
+            "/student-vle": {
+                post: {
+                    summary: "Importer le CSV des activités VLE des étudiants",
+                    tags: ["Import"],
+                    description: "Requiert OAuth. CSV importé via handleImport. Message : StudentVLE importé avec succès",
+                    requestBody: {
+                        required: true,
+                        content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/FileUpload" } } }
+                    },
+                    responses: {
+                        200: { description: "Import réussi", content: { "application/json": { schema: { $ref: "#/components/schemas/ResponseMessage" } } } }
+                    }
+                },
+                get: {
+                    summary: "Récupérer les activités VLE des étudiants (avec pagination)",
+                    tags: ["Student VLE"],
+                    parameters: [
+                        { in: "query", name: "page", schema: { type: "integer", default: 1 }, description: "Numéro de la page" },
+                        { in: "query", name: "size", schema: { type: "integer", default: 1000 }, description: "Nombre de lignes par page (max 20000)" }
+                    ],
+                    responses: {
+                        200: {
+                            description: "Liste paginée des activités VLE",
+                            content: {
+                                "application/json": {
+                                    schema: {
+                                        type: "object",
+                                        properties: {
+                                            page: { type: "integer" },
+                                            size: { type: "integer" },
+                                            rows: { type: "integer" },
+                                            data: { type: "array", items: { $ref: "#/components/schemas/LearningLog" } }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "/student-assessment": {
+                post: {
+                    summary: "Importer le CSV des évaluations des étudiants",
+                    tags: ["Import"],
+                    description: "Requiert OAuth. CSV importé via handleImport. Message : StudentAssessment importé",
+                    requestBody: {
+                        required: true,
+                        content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/FileUpload" } } }
+                    },
+                    responses: {
+                        200: { description: "Import réussi", content: { "application/json": { schema: { $ref: "#/components/schemas/ResponseMessage" } } } }
+                    }
+                },
+                get: {
+                    summary: "Récupérer toutes les évaluations des étudiants",
+                    tags: ["Student Assessment"],
+                    responses: {
+                        200: { description: "Liste des évaluations des étudiants", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Assessment" } } } } }
+                    }
+                }
+            },
+            "/courses": {
+                post: {
+                    summary: "Importer le CSV des cours",
+                    tags: ["Import"],
+                    description: "Requiert OAuth. CSV importé via handleImport. Message : Courses importés",
+                    requestBody: {
+                        required: true,
+                        content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/FileUpload" } } }
+                    },
+                    responses: {
+                        200: { description: "Import réussi", content: { "application/json": { schema: { $ref: "#/components/schemas/ResponseMessage" } } } }
+                    }
+                },
+                get: {
+                    summary: "Récupérer tous les cours",
+                    tags: ["Courses"],
+                    responses: {
+                        200: { description: "Liste de tous les cours", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Course" } } } } }
+                    }
+                }
+            },
+            "/registrations": {
+                post: {
+                    summary: "Importer le CSV des inscriptions des étudiants",
+                    tags: ["Import"],
+                    description: "Requiert OAuth. CSV importé via handleImport. Message : Registrations importées",
+                    requestBody: {
+                        required: true,
+                        content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/FileUpload" } } }
+                    },
+                    responses: {
+                        200: { description: "Import réussi", content: { "application/json": { schema: { $ref: "#/components/schemas/ResponseMessage" } } } }
+                    }
+                },
+                get: {
+                    summary: "Récupérer toutes les inscriptions",
+                    tags: ["Registrations"],
+                    responses: {
+                        200: { description: "Liste des inscriptions", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Registration" } } } } }
+                    }
+                }
+            },
+            "/vle-info": {
+                post: {
+                    summary: "Importer le CSV des informations VLE",
+                    tags: ["Import"],
+                    description: "Requiert OAuth. CSV importé via handleImport. Message : VLE Info importé",
+                    requestBody: {
+                        required: true,
+                        content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/FileUpload" } } }
+                    },
+                    responses: {
+                        200: { description: "Import réussi", content: { "application/json": { schema: { $ref: "#/components/schemas/ResponseMessage" } } } }
+                    }
+                },
+                get: {
+                    summary: "Récupérer toutes les infos VLE",
+                    tags: ["VLE Info"],
+                    responses: {
+                        200: { description: "Liste des infos VLE", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/VLEInfo" } } } } }
+                    }
+                }
+            },
+            "/assessments": {
+                post: {
+                    summary: "Importer le CSV des évaluations",
+                    tags: ["Import"],
+                    description: "Requiert OAuth. CSV importé via handleImport. Message : Assessments importés",
+                    requestBody: {
+                        required: true,
+                        content: { "multipart/form-data": { schema: { $ref: "#/components/schemas/FileUpload" } } }
+                    },
+                    responses: {
+                        200: { description: "Import réussi", content: { "application/json": { schema: { $ref: "#/components/schemas/ResponseMessage" } } } }
+                    }
+                },
+                get: {
+                    summary: "Récupérer toutes les évaluations",
+                    tags: ["Assessments"],
+                    responses: {
+                        200: { description: "Liste des évaluations", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Assessment" } } } } }
+                    }
+                }
+            },
+            "/students": {
+                get: {
+                    summary: "Récupérer tous les étudiants",
+                    tags: ["Students"],
+                    responses: {
+                        200: { description: "Liste de tous les étudiants", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Registration" } } } } }
+                    }
+                }
+            }
         }
-        await importFunction(req.file.path);
-        res.status(200).json({ message });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
+    },
+    apis: []
+};
+
+const swaggerSpec = swaggerJsdoc(options);
+
+export function setupSwagger(app) {
+    app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }
-
-// ---------------------------------------------
-// POST — IMPORT CSV
-// ---------------------------------------------
-app.post("/student-info", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importStudentInfo, "StudentInfo importé")
-);
-
-app.post("/student-vle", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importStudentVle, "StudentVLE importé avec succès")
-);
-
-app.post("/student-assessment", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importStudentAssessment, "StudentAssessment importé")
-);
-
-app.post("/courses", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importCourses, "Courses importés")
-);
-
-app.post("/registrations", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importRegistrations, "Registrations importées")
-);
-
-app.post("/vle-info", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importVleInfo, "VLE Info importé")
-);
-
-app.post("/assessments", checkOAuth, upload.single("file"), (req, res) =>
-    handleImport(req, res, importAssessments, "Assessments importés")
-);
-
-// ------------------------------------------------------
-// GET — TABLES SIMPLES
-// ------------------------------------------------------
-app.get("/students", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM students");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get("/courses", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM courses");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get("/registrations", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM registrations");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get("/vle-info", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM vle_info");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get("/assessments", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM assessments");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get("/student-assessment", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM studentassessment");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ------------------------------------------------------
-// GET — PAGINATION MASSIVE (7 MILLIONS DE LIGNES)
-// ------------------------------------------------------
-app.get("/student-vle", async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1;
-        const size = parseInt(req.query.size) || 1000;
-
-        // max 20k par page pour éviter explosion mémoire
-        const limit = Math.min(size, 20000);
-        const offset = (page - 1) * limit;
-
-        const result = await pool.query(
-            `SELECT * FROM studentvle 
-             ORDER BY id_student 
-             LIMIT $1 OFFSET $2`,
-            [limit, offset]
-        );
-
-        // total count (optimisé via cache possible plus tard)
-        const totalResult = await pool.query("SELECT COUNT(*) FROM studentvle");
-        const total = parseInt(totalResult.rows[0].count);
-        const totalPages = Math.ceil(total / limit);
-
-        res.json({
-            page,
-            size: limit,
-            total,
-            totalPages,
-            rows: result.rowCount,
-            data: result.rows
-        });
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Serveur
-app.listen(3001, () => console.log("LMSConnector running on port 3001"));
